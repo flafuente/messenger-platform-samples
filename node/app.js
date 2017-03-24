@@ -13,11 +13,12 @@
 const 
   bodyParser = require('body-parser'),
   config = require('config'),
+  fs = require('fs'),
   crypto = require('crypto'),
   express = require('express'),
   https = require('https'),  
   request = require('request');
-
+  
 var app = express();
 app.set('port', process.env.PORT || 5000);
 app.set('view engine', 'ejs');
@@ -29,6 +30,11 @@ app.use(express.static('public'));
  * set them using environment variables or modifying the config file in /config.
  *
  */
+
+// LetsEncrypt filepaths
+const SSL_PATH = (process.env.SSL_PATH) ? 
+  process.env.SSL_PATH :
+  config.get('sslPath');
 
 // App Secret can be retrieved from the App Dashboard
 const APP_SECRET = (process.env.MESSENGER_APP_SECRET) ? 
@@ -55,6 +61,7 @@ if (!(APP_SECRET && VALIDATION_TOKEN && PAGE_ACCESS_TOKEN && SERVER_URL)) {
   console.error("Missing config values");
   process.exit(1);
 }
+
 
 /*
  * Use your own validation token. Check that the token used in the Webhook 
@@ -830,9 +837,15 @@ function callSendAPI(messageData) {
 // Start server
 // Webhooks must be available via SSL with a certificate signed by a valid 
 // certificate authority.
-app.listen(app.get('port'), function() {
+
+var options = {
+    key: fs.readFileSync(SSL_PATH + 'privkey.pem'),
+    cert: fs.readFileSync(SSL_PATH + 'fullchain.pem')
+};
+var server = https.createServer(options, app);
+server.listen(app.get('port'), function() {
   console.log('Node app is running on port', app.get('port'));
 });
 
-module.exports = app;
+module.exports = server;
 
