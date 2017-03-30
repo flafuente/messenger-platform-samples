@@ -16,7 +16,8 @@ const
   fs = require('fs'),
   crypto = require('crypto'),
   express = require('express'),
-  https = require('https'),  
+  https = require('https'),
+  firebase = require("firebase"),
   request = require('request');
   
 var app = express();
@@ -61,6 +62,18 @@ if (!(APP_SECRET && VALIDATION_TOKEN && PAGE_ACCESS_TOKEN && SERVER_URL)) {
   console.error("Missing config values");
   process.exit(1);
 }
+
+  // Initialize the app with a service account, granting admin privileges
+  if (firebase.apps.length === 0) {
+    firebase.initializeApp({
+      databaseURL: "https://blinding-heat-1559.firebaseio.com",
+      serviceAccount: "blinding-heat-1559-firebase-adminsdk-iila9-b3d6bab942.json"
+    });
+  }
+
+  // As an admin, the app has access to read and write all data, regardless of Security Rules
+  var db = firebase.database();
+  var ref = db.ref("newline");
 
 
 /*
@@ -227,7 +240,7 @@ function receivedMessage(event) {
   var recipientID = event.recipient.id;
   var timeOfMessage = event.timestamp;
   var message = event.message;
-
+console.log("Event", JSON.stringify(event));
   console.log("Received message for user %d and page %d at %d with message:", 
     senderID, recipientID, timeOfMessage);
   console.log(JSON.stringify(message));
@@ -257,11 +270,27 @@ function receivedMessage(event) {
   }
 
   if (messageText) {
-
+    if (messageText.toLowerCase().indexOf("llega") > -1) {
+      messageText = 'arrived';
+    }
     // If we receive a text message, check to see if it matches any special
     // keywords and send back the corresponding example. Otherwise, just echo
     // the text we received.
-    switch (messageText) {
+    switch (messageText.toLowerCase()) {
+      case 'hola':
+        storeUser(senderID,function(name) {
+          if (name) {
+            sendTextMessage(senderID, "Hola " + name + ", en que puedo ayudarte?");
+          }else {
+            sendTextMessage(senderID, "Parece ser que ha habido un error, dame unos segundos...");
+          }
+        });
+        break;
+      
+      case 'arrived':
+        sendTextMessage(senderID, "Genial!, mandame tu ubicación porfavor 😅");
+        break;
+
       case 'image':
         sendImageMessage(senderID);
         break;
@@ -318,11 +347,87 @@ function receivedMessage(event) {
         sendTextMessage(senderID, messageText);
     }
   } else if (messageAttachments) {
+
     sendTextMessage(senderID, "Message with attachment received");
+    switch (messageAttachments[0].type) {
+      case 'location':
+        storePos(senderID,messageAttachments[0].payload.coordinates.lat,messageAttachments[0].payload.coordinates.long, function(state) {
+          if (state) {
+            //TODO Custom Event Option
+            sendQuickReply(senderID);
+          }else {
+            sendTextMessage(senderID, "Ha habido un error, comienza de nuevo.");
+          }
+          
+        });
+        break;
+
+      default:
+        sendTextMessage(senderID, "Message with attachment " + messageAttachments[0].type + " received");
+    }
+
   }
 }
 
+function storePos(uid,lat,lon, callback) {
+    
+  var userRef = ref.child(uid).child('locations');
+  var date = new Date();
+  userRef.push().set({
+    when: date.toISOString(),
+    lat: lat,
+    lon: lon
+  }, function(error) {
+    if (error) {
+      console.log("Data could not be saved." + error);
+      callback(false);
+    } else {
+      console.log("Data saved successfully.");
+      callback(true);
+    }
+  });
 
+
+}
+
+function storeUser(uid, callback) {
+
+  // var url = ";
+  https.get({
+        host: 'graph.facebook.com',
+        path: "/v2.6/"+uid+"?fields=first_name,last_name,profile_pic,locale,timezone,gender&access_token="+PAGE_ACCESS_TOKEN
+    }, function(response) {
+        // Continuously update stream with data
+        var body = '';
+        response.on('data', function(d) {
+            body += d;
+        });
+        response.on('end', function() {
+
+            // Data reception is done, do whatever with it!
+            var parsed = JSON.parse(body);
+            
+            var userRef = ref.child(uid);
+            // var date = new Date();
+            userRef.set({
+              first_name: parsed.first_name,
+              last_name: parsed.last_name,
+              profile_pic: parsed.profile_pic,
+              gender: parsed.gender,
+              locations: {}
+            }, function(error) {
+              if (error) {
+                console.log("Data could not be saved." + error);
+                callback(false);
+              } else {
+                console.log("Data saved successfully.");
+                callback(parsed.first_name);
+              }
+            });
+        });
+    });
+
+}
 /*
  * Delivery Confirmation Event
  *
@@ -429,7 +534,7 @@ function sendImageMessage(recipientId) {
       }
     }
   };
-
+  console.log(SERVER_URL + "/assets/rift.png");
   callSendAPI(messageData);
 }
 
@@ -702,22 +807,22 @@ function sendQuickReply(recipientId) {
       id: recipientId
     },
     message: {
-      text: "What's your favorite movie genre?",
+      text: "¿Que evento tienes esta noche?",
       quick_replies: [
         {
           "content_type":"text",
-          "title":"Action",
-          "payload":"DEVELOPER_DEFINED_PAYLOAD_FOR_PICKING_ACTION"
+          "title":"Evento",
+          "payload":"DEVELOPER_DEFINED_PAYLOAD_FOR_PICKING_EVENT1"
         },
         {
           "content_type":"text",
-          "title":"Comedy",
-          "payload":"DEVELOPER_DEFINED_PAYLOAD_FOR_PICKING_COMEDY"
+          "title":"Otro Evento",
+          "payload":"DEVELOPER_DEFINED_PAYLOAD_FOR_PICKING_EVENT2"
         },
         {
           "content_type":"text",
-          "title":"Drama",
-          "payload":"DEVELOPER_DEFINED_PAYLOAD_FOR_PICKING_DRAMA"
+          "title":"Evento 2",
+          "payload":"DEVELOPER_DEFINED_PAYLOAD_FOR_PICKING_EVENT3"
         }
       ]
     }
