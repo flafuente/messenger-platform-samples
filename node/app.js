@@ -16,7 +16,8 @@ const
   fs = require('fs'),
   crypto = require('crypto'),
   express = require('express'),
-  https = require('https'),
+  https = require('https'),  
+  http = require('http'),  
   firebase = require("firebase"),
   request = require('request');
   
@@ -240,7 +241,7 @@ function receivedMessage(event) {
   var recipientID = event.recipient.id;
   var timeOfMessage = event.timestamp;
   var message = event.message;
-console.log("Event", JSON.stringify(event));
+  //console.log("Event", JSON.stringify(event));
   console.log("Received message for user %d and page %d at %d with message:", 
     senderID, recipientID, timeOfMessage);
   console.log(JSON.stringify(message));
@@ -348,7 +349,7 @@ console.log("Event", JSON.stringify(event));
     }
   } else if (messageAttachments) {
 
-    sendTextMessage(senderID, "Message with attachment received");
+    // sendTextMessage(senderID, "Message with attachment received");
     switch (messageAttachments[0].type) {
       case 'location':
         storePos(senderID,messageAttachments[0].payload.coordinates.lat,messageAttachments[0].payload.coordinates.long, function(state) {
@@ -362,11 +363,45 @@ console.log("Event", JSON.stringify(event));
         });
         break;
 
+      case 'image':
+        storeImgs(senderID,messageAttachments, function(state) {
+          if (state) {
+            //TODO Custom Event Option
+            sendTextMessage(senderID, "Image subidas correctamente!");
+          }else {
+            sendTextMessage(senderID, "Ha habido un error, comienza de nuevo.");
+          }
+          
+        });
+        break;
+
       default:
         sendTextMessage(senderID, "Message with attachment " + messageAttachments[0].type + " received");
     }
 
   }
+}
+
+function storeImgs(uid,imgs, callback) {
+  var images = [];
+  for (var i = 0; i < imgs.length; i++) {
+    images.push(imgs[i].payload.url);
+  }
+  var userRef = ref.child(uid).child('images');
+  var date = new Date();
+  userRef.push().set(
+    imgs[0].payload.url
+  , function(error) {
+    if (error) {
+      console.log("Data could not be saved." + error);
+      callback(false);
+    } else {
+      console.log("Data saved successfully.");
+      callback(true);
+    }
+  });
+
+
 }
 
 function storePos(uid,lat,lon, callback) {
